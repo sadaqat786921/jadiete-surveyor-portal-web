@@ -1,0 +1,11 @@
+{
+  "title": "Jadeite Systems · Surveyor portal",
+  "description": "Jadeite Glazing — Surveyor portal: today’s route, final surveys (measure every frame, site checks, photos, signature), inspections, calendar and messages.",
+  "language": "en-GB",
+  "robots": {
+    "index": false
+  },
+  "icons": {
+    "icon": "favicon.png"
+  }
+}
