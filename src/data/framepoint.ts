@@ -19,7 +19,10 @@ export type FinalSurvey = {
   surveyor: string; date: string; time: string; status: 'Booked' | 'Started' | 'Done';
   checks?: FinalCheck[]; notes?: string; signed?: boolean; doneOn?: string;
   onWay?: string; startedAt?: string; site?: Record<string, SiteCheck>; photos?: number; signedBy?: string; moveAsked?: string; fitterNotes?: string;
+  paper?: PaperReport; // the surveyor uploaded a paperwork report instead of typing the sizes
 };
+// A paperwork (paper survey sheet) report uploaded on site. When there is one, typed sizes are not used.
+export type PaperReport = { file: string; kb: number; type: 'pdf' | 'image'; at: string; preview?: string; changed: number[] };
 
 const WORK = 'Supply & Fit - Remove & replace';
 const WIN_SPEC = (colour = 'White'): [string, string][] => [

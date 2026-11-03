@@ -7,14 +7,14 @@ import { useParams, Link } from 'react-router-dom';
 import {
   IconPhone, IconMail, IconHome, IconMapPin, IconCar, IconCircleCheck, IconAlertTriangle, IconPlayerPlay, IconSend, IconDoorOff, IconCalendarOff,
   IconCamera, IconSignature, IconMessage, IconInfoCircle, IconDownload, IconCopy, IconDeviceFloppy, IconArrowRight,
-  IconMailForward, IconNotes, IconSettings, IconBellRinging, IconPhoneCall, IconUser,
+  IconMailForward, IconNotes, IconSettings, IconBellRinging, IconPhoneCall, IconUser, IconUpload, IconFileText,
 } from '@tabler/icons-react';
 import { PageHead, Card, CardHead, Tag, Avatar, Tabs, Tile, useToast, Empty, Modal, Field } from '../components/ui';
 import { FinalSurveyView, FileChip } from '../components/Lifecycle';
 import { IMG, me, staffById } from '../data/mock';
 import { useStore, TODAY, fmtDate, EnquiryX } from '../data/store';
-import type { FinalCheck, SiteCheck } from '../data/framepoint';
-import { useMyVisits, itemsToCheck, frameCount, statusTone, nowTime, short, SignaturePad, PhotoStrip, OnMyWayModal, CantMakeItModal, NoAccessModal, Visit, salespersonOf } from '../components/survey';
+import type { FinalCheck, SiteCheck, PaperReport } from '../data/framepoint';
+import { useMyVisits, itemsToCheck, frameCount, statusTone, nowTime, short, SignaturePad, PhotoStrip, OnMyWayModal, CantMakeItModal, NoAccessModal, Visit, salespersonOf, PaperReportModal, PaperCard } from '../components/survey';
 
 export const SITE_CHECKS: [string, string][] = [
   ['access', 'Every opening can be reached easily'],
@@ -67,10 +67,15 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
   const [signer, setSigner] = useState(fs.signedBy || e.name);
   const [noSign, setNoSign] = useState('');
   const [msg, setMsg] = useState('');
+  const [paper, setPaper] = useState<PaperReport | undefined>(fs.paper);
   const first = useRef(true);
-  const checks: FinalCheck[] = items.map((i, k) => ({ no: i.no, name: i.name, sales: i.size || '', checked: sizeOf(m[k]), ok: !!matches(i.size || '', m[k]), note: m[k].note || undefined, photos: m[k].photos, w: m[k].w, h: m[k].h }));
-  const measured = m.filter(x => x.w && x.h).length;
-  const changed = checks.filter((c, k) => matches(c.sales, m[k]) === false);
+  // With a paperwork report the typed sizes are not used: the sizes are on the uploaded sheet.
+  const checks: FinalCheck[] = items.map((i, k) => (paper
+    ? { no: i.no, name: i.name, sales: i.size || '', checked: 'On the paperwork report', ok: !paper.changed.includes(i.no), note: m[k].note || undefined, photos: m[k].photos }
+    : { no: i.no, name: i.name, sales: i.size || '', checked: sizeOf(m[k]), ok: !!matches(i.size || '', m[k]), note: m[k].note || undefined, photos: m[k].photos, w: m[k].w, h: m[k].h }));
+  const typed = m.filter(x => x.w && x.h).length;
+  const measured = paper ? items.length : typed;
+  const changed = checks.filter((c, k) => (paper ? !c.ok : matches(c.sales, m[k]) === false));
   const answered = SITE_CHECKS.filter(([k]) => site[k]).length;
   const issues = SITE_CHECKS.filter(([k]) => site[k] && site[k].ok !== 'Yes');
   const allPhotos = photos + m.reduce((a, x) => a + x.photos, 0);
@@ -80,9 +85,9 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     if (!onSite) return;
-    updEnq(e.id, x => ({ finalSurvey: { ...x.finalSurvey!, checks, site, photos, notes, fitterNotes: fitter } }));
+    updEnq(e.id, x => ({ finalSurvey: { ...x.finalSurvey!, checks, site, photos, notes, fitterNotes: fitter, paper } }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [m, site, photos, notes, fitter]);
+  }, [m, site, photos, notes, fitter, paper]);
 
   const upd = (k: number, p: Partial<M>) => setM(xs => xs.map((x, j) => (j === k ? { ...x, ...p } : x)));
   const same = (k: number) => { const [w, h] = parse(items[k].size); upd(k, { w, h }); };
@@ -93,15 +98,24 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
   };
   const submit = () => {
     const ch = checks.filter(c => !c.ok);
-    const summary = `${checks.length} item${checks.length === 1 ? '' : 's'} measured · ${ch.length ? `${ch.length} size${ch.length > 1 ? 's' : ''} changed (${ch.map(c => `${c.no}. ${c.sales} → ${c.checked}`).join('; ')})` : 'all sizes match'}.${issues.length ? ` Site: ${issues.map(([k, l]) => `${l.toLowerCase()} — ${site[k].ok.toLowerCase()}${site[k].note ? ` (${site[k].note})` : ''}`).join('; ')}.` : ' No site problems.'} ${allPhotos} photos. ${signed ? `Signed by ${signer}.` : `Not signed: ${noSign}.`}${notes ? ` Notes: ${notes}` : ''}`;
+    const summary = `${paper ? `Sizes from the paperwork report (${paper.file}) · ` : ''}${checks.length} item${checks.length === 1 ? '' : 's'} measured · ${ch.length ? `${ch.length} size${ch.length > 1 ? 's' : ''} changed (${ch.map(c => (paper ? `${c.no}. ${c.name}` : `${c.no}. ${c.sales} → ${c.checked}`)).join('; ')})` : 'all sizes match'}.${issues.length ? ` Site: ${issues.map(([k, l]) => `${l.toLowerCase()} — ${site[k].ok.toLowerCase()}${site[k].note ? ` (${site[k].note})` : ''}`).join('; ')}.` : ' No site problems.'} ${allPhotos} photos. ${signed ? `Signed by ${signer}.` : `Not signed: ${noSign}.`}${notes ? ` Notes: ${notes}` : ''}`;
     updEnq(e.id, x => ({
-      finalSurvey: { ...x.finalSurvey!, status: 'Done', checks, site, photos, notes: notes || (ch.length ? `${ch.length} size${ch.length > 1 ? 's' : ''} changed.` : 'All sizes confirmed.'), fitterNotes: fitter, signed, signedBy: signed ? signer : undefined, doneOn: short(TODAY), moveAsked: undefined },
+      finalSurvey: { ...x.finalSurvey!, status: 'Done', checks, site, photos, notes: notes || (ch.length ? `${ch.length} size${ch.length > 1 ? 's' : ''} changed.` : 'All sizes confirmed.'), fitterNotes: fitter, paper, signed, signedBy: signed ? signer : undefined, doneOn: short(TODAY), moveAsked: undefined },
       next: ch.length ? 'Revise quote in Framepoint' : 'Contract & financial readiness', nextDue: 'Today',
     }), { kind: 'note', title: `Final survey done · ${ch.length ? `${ch.length} size${ch.length > 1 ? 's' : ''} changed` : 'all sizes match'}`, body: summary, who: me.name });
     set('appts', as => as.map(a => (a.enq === e.id && a.kind === 'Survey' && ['Booked', 'On site'].includes(a.status) ? { ...a, status: 'Done' } : a)));
     setModal(null); setTab('report');
     toast(ch.length ? `Submitted · ${salespersonOf(e).split(' ')[0]} will revise the quote before the office orders` : 'Submitted · the office can now get the order ready');
   };
+  const usePaper = (p: PaperReport) => {
+    const had = typed;
+    setM(xs => xs.map(x => ({ ...x, w: '', h: '' })));
+    setPaper(p); setModal(null);
+    updEnq(e.id, {}, { kind: 'system', title: `${paper ? 'Paperwork report replaced' : 'Paperwork report uploaded'} · ${p.file}`, body: p.changed.length ? `${p.changed.length} item${p.changed.length === 1 ? '' : 's'} different from the sales size.` : 'All sizes the same as sales.', who: me.name });
+    const word = paper ? 'replaced' : 'added';
+    toast(had ? `Paperwork report ${word} · ${had === 1 ? 'the typed size was' : `the ${had} typed sizes were`} removed` : `Paperwork report ${word} · the sizes come from the report`);
+  };
+  const removePaper = () => { setPaper(undefined); updEnq(e.id, {}, { kind: 'system', title: 'Paperwork report removed · sizes will be typed in', who: me.name }); toast('Report removed · type each size instead'); };
   const sendMsg = () => { updEnq(e.id, {}, { kind: 'note', title: `Message from ${me.first} (surveyor)`, body: msg, who: me.name }); toast('Sent to the office'); setMsg(''); };
 
   const step = ['Booked', 'On my way', 'On site', 'Submitted'].indexOf(v.status);
@@ -109,13 +123,13 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
   const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${e.address} ${e.postcode}`)}`;
   const tabs = done
     ? [{ id: 'report', label: 'Survey report' }, { id: 'visit', label: 'Visit details' }, { id: 'history', label: 'History', n: e.comms?.length }]
-    : [{ id: 'visit', label: 'Visit details' }, { id: 'measure', label: `Measure · ${measured}/${items.length}` }, { id: 'site', label: `Site checks · ${answered}/${SITE_CHECKS.length}` }, { id: 'photos', label: `Photos · ${allPhotos}` }, { id: 'sign', label: 'Sign and submit' }, { id: 'history', label: 'History', n: e.comms?.length }];
+    : [{ id: 'visit', label: 'Visit details' }, { id: 'measure', label: paper ? 'Measure · paperwork' : `Measure · ${measured}/${items.length}` }, { id: 'site', label: `Site checks · ${answered}/${SITE_CHECKS.length}` }, { id: 'photos', label: `Photos · ${allPhotos}` }, { id: 'sign', label: 'Sign and submit' }, { id: 'history', label: 'History', n: e.comms?.length }];
 
   return (
     <>
       <PageHead title={e.name} crumbs={[{ label: 'My surveys', to: '/surveys' }, { label: `${e.jobId || e.id} · Final survey` }]}
         actions={done ? <><button className="btn btn-grey" onClick={() => toast(`Final survey report for ${e.name} downloaded (PDF)`)}><IconDownload size={16} />Download report</button><Tag tone="ok" icon={<IconCircleCheck size={12} />}>Submitted {fs.doneOn}</Tag></>
-          : onSite ? <><button className="btn btn-grey" onClick={() => { updEnq(e.id, x => ({ finalSurvey: { ...x.finalSurvey!, checks, site, photos, notes, fitterNotes: fitter } })); toast('Saved · open it again any time from My surveys'); }}><IconDeviceFloppy size={16} />Save and finish later</button><button className="btn btn-primary" onClick={() => setModal('submit')}><IconSend size={16} />Submit survey</button></>
+          : onSite ? <><button className="btn btn-grey" onClick={() => { updEnq(e.id, x => ({ finalSurvey: { ...x.finalSurvey!, checks, site, photos, notes, fitterNotes: fitter, paper } })); toast('Saved · open it again any time from My surveys'); }}><IconDeviceFloppy size={16} />Save and finish later</button><button className="btn btn-primary" onClick={() => setModal('submit')}><IconSend size={16} />Submit survey</button></>
           : <>
             <button className="btn btn-grey" onClick={() => setModal('cant')}><IconCalendarOff size={16} />Can't make it</button>
             {canStart && <button className="btn btn-outline" onClick={() => setModal('noaccess')}><IconDoorOff size={16} />Customer not in</button>}
@@ -186,10 +200,17 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
             {tab === 'measure' && (
               <div className="vstack" style={{ gap: 14 }}>
                 {!onSite && <div className="alert info small"><IconInfoCircle size={16} />Press <b>&nbsp;Start survey&nbsp;</b> when you arrive to fill this in.</div>}
+                {paper ? (
+                  <div className="vstack" style={{ gap: 10 }}>
+                    <div className="alert ok small"><IconFileText size={16} /><div><b>The sizes come from your paperwork report.</b> Typed sizes are not used. To type the sizes instead, remove the report.</div></div>
+                    <PaperCard p={paper} onReplace={onSite ? () => setModal('paper') : undefined} onRemove={onSite ? removePaper : undefined} />
+                  </div>
+                ) : (
                 <div className="between" style={{ flexWrap: 'wrap', gap: 8 }}>
-                  <span className="small t2">Measure each opening and type the size in millimetres. Within {TOL}mm counts as the same.</span>
-                  {onSite && <button className="btn btn-outline btn-xs" onClick={() => { items.forEach((_, k) => { if (!m[k].w || !m[k].h) same(k); }); toast('Filled every empty size with the salesperson’s size — change any that are different'); }}><IconCopy size={13} />Fill the rest with sales sizes</button>}
+                  <span className="small t2">Measure each opening and type the size in millimetres. Within {TOL}mm counts as the same. Or upload your paperwork report instead.</span>
+                  {onSite && <div className="hstack" style={{ gap: 8, flexWrap: 'wrap' }}><button className="btn btn-outline btn-xs" onClick={() => setModal('paper')}><IconUpload size={13} />Upload paperwork report</button><button className="btn btn-outline btn-xs" onClick={() => { items.forEach((_, k) => { if (!m[k].w || !m[k].h) same(k); }); toast('Filled every empty size with the salesperson’s size — change any that are different'); }}><IconCopy size={13} />Fill the rest with sales sizes</button></div>}
                 </div>
+                )}
                 {items.map((i, k) => {
                   const r = matches(i.size || '', m[k]);
                   const [dw, dh] = r === false ? diff(i.size || '', m[k]) : [0, 0];
@@ -201,6 +222,7 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
                           <span className="tiny muted">{i.product}</span>
                           <span className="small">Sales measured <b>{i.size}</b></span>
                         </div>
+                        {paper ? <div className="vstack" style={{ gap: 6, width: 170, alignItems: 'flex-end' }}>{paper.changed.includes(i.no) ? <Tag tone="warn" icon={<IconAlertTriangle size={12} />}>Different · see report</Tag> : <Tag tone="ok" icon={<IconCircleCheck size={12} />}>Same · on report</Tag>}</div> : <>
                         <div className="hstack" style={{ gap: 8, alignItems: 'flex-end' }}>
                           <Field label="Width (mm)"><input className="input" inputMode="numeric" style={{ width: 110 }} disabled={!onSite} value={m[k].w} onChange={x => upd(k, { w: x.target.value.replace(/\D/g, '') })} aria-label={`Width of item ${i.no}`} /></Field>
                           <span style={{ paddingBottom: 12 }}>×</span>
@@ -211,6 +233,7 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
                           {r === false && <span className="tiny" style={{ color: 'var(--text-2)' }}>{dw ? `Width ${dw > 0 ? '+' : ''}${dw}mm` : ''}{dw && dh ? ' · ' : ''}{dh ? `Height ${dh > 0 ? '+' : ''}${dh}mm` : ''}</span>}
                           {onSite && r === undefined && <button className="link small" onClick={() => same(k)}>Same as sales</button>}
                         </div>
+                        </>}
                       </div>
                       {onSite && (
                         <div className="hstack" style={{ gap: 10, flexWrap: 'wrap' }}>
@@ -221,7 +244,7 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
                     </div>
                   );
                 })}
-                {changed.length > 0 && <div className="alert warn small"><IconAlertTriangle size={16} /><div><b>{changed.length} size{changed.length > 1 ? 's are' : ' is'} different.</b> When you submit, {salespersonOf(e)} is asked to revise the quote in Framepoint. The order uses your sizes.</div></div>}
+                {changed.length > 0 && <div className="alert warn small"><IconAlertTriangle size={16} /><div><b>{changed.length} size{changed.length > 1 ? 's are' : ' is'} different.</b> When you submit, {salespersonOf(e)} is asked to revise the quote in Framepoint. The order uses your sizes{paper ? ' from the paperwork report' : ''}.</div></div>}
               </div>
             )}
 
@@ -254,9 +277,10 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
             {tab === 'sign' && (
               <div className="vstack" style={{ gap: 16 }}>
                 <div className="grid-4" style={{ rowGap: 12 }}>
-                  {([['Sizes measured', `${measured} of ${items.length}`, measured === items.length], ['Sizes changed', String(changed.length), true], ['Site checks', `${answered} of ${SITE_CHECKS.length}`, answered === SITE_CHECKS.length], ['Photos', String(allPhotos), allPhotos > 0]] as [string, string, boolean][]).map(([l, val, ok]) => <div key={l} className="vstack" style={{ gap: 4 }}><span className="small muted">{l}</span><b style={{ fontSize: 15, color: ok ? 'var(--text)' : 'var(--err)' }}>{val}</b></div>)}
+                  {([['Sizes measured', paper ? 'Paperwork report' : `${measured} of ${items.length}`, measured === items.length], ['Sizes changed', String(changed.length), true], ['Site checks', `${answered} of ${SITE_CHECKS.length}`, answered === SITE_CHECKS.length], ['Photos', String(allPhotos), allPhotos > 0]] as [string, string, boolean][]).map(([l, val, ok]) => <div key={l} className="vstack" style={{ gap: 4 }}><span className="small muted">{l}</span><b style={{ fontSize: 15, color: ok ? 'var(--text)' : 'var(--err)' }}>{val}</b></div>)}
                 </div>
-                {changed.length > 0 && <div className="vstack" style={{ gap: 4 }}><b style={{ fontSize: 13 }}>Sizes that changed</b>{changed.map(c => <span key={c.no} className="small t2">{c.no}. {c.name}: {c.sales} → <b style={{ color: 'var(--text)' }}>{c.checked}</b></span>)}</div>}
+                {changed.length > 0 && <div className="vstack" style={{ gap: 4 }}><b style={{ fontSize: 13 }}>Sizes that changed</b>{changed.map(c => <span key={c.no} className="small t2">{c.no}. {c.name}: {c.sales} → <b style={{ color: 'var(--text)' }}>{paper ? 'see the paperwork report' : c.checked}</b></span>)}</div>}
+                {paper && <PaperCard p={paper} />}
                 <Field label="Notes for the office (optional)"><textarea className="textarea" disabled={!onSite} value={notes} onChange={x => setNotes(x.target.value)} placeholder="e.g. Customer wants the back door to open out instead — please check with sales" /></Field>
                 <Field label="Notes for the fitters (optional)"><textarea className="textarea" disabled={!onSite} value={fitter} onChange={x => setFitter(x.target.value)} placeholder="e.g. Bring a 3-step ladder for the landing window. Dog in the kitchen." /></Field>
                 <div className="card" style={{ padding: 14, gap: 10 }}>
@@ -306,7 +330,7 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
           {onSite && (
             <Card>
               <CardHead title="Before you submit" />
-              {([['All sizes measured', measured === items.length, 'measure'], ['Every site check answered', answered === SITE_CHECKS.length, 'site'], ['At least one photo', allPhotos > 0, 'photos'], ['Customer signed (or reason given)', signed || noSign.trim().length > 3, 'sign']] as [string, boolean, string][]).map(([l, ok, t]) => (
+              {([[paper ? 'Sizes · paperwork report added' : 'All sizes measured', measured === items.length, 'measure'], ['Every site check answered', answered === SITE_CHECKS.length, 'site'], ['At least one photo', allPhotos > 0, 'photos'], ['Customer signed (or reason given)', signed || noSign.trim().length > 3, 'sign']] as [string, boolean, string][]).map(([l, ok, t]) => (
                 <button key={l} type="button" className="hstack small" style={{ gap: 8, border: 0, background: 'none', padding: '4px 0', textAlign: 'left' }} onClick={() => setTab(t)}>{ok ? <IconCircleCheck size={17} color="#1f9d5b" /> : <span className="jl-dot" />}<span style={{ color: ok ? 'var(--text)' : 'var(--text-2)' }}>{l}</span></button>
               ))}
               <button className="btn btn-primary btn-sm" disabled={!ready} onClick={() => setModal('submit')}><IconSend size={14} />Submit survey</button>
@@ -330,12 +354,13 @@ function SurveyView({ v, e }: { v: Visit; e: EnquiryX }) {
 
       {modal === 'way' && <OnMyWayModal v={v} onClose={() => setModal(null)} />}
       {modal === 'cant' && <CantMakeItModal v={v} onClose={() => setModal(null)} />}
+      {modal === 'paper' && <PaperReportModal items={items} customer={e.name} typed={typed} current={paper} onClose={() => setModal(null)} onSave={usePaper} />}
       {modal === 'noaccess' && <NoAccessModal v={v} onClose={() => setModal(null)} />}
       {modal === 'submit' && (
         <Modal title="Submit the final survey" sub={`${e.name} · ${checks.length} items`} onClose={() => setModal(null)} width={620}
           footer={<><button className="btn btn-grey" onClick={() => setModal(null)}>Keep working</button><button className="btn btn-primary" disabled={!ready} onClick={submit}><IconSend size={16} />Submit to the office</button></>}>
           <div className="list" style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '0 14px' }}>
-            {([['Sizes', measured === items.length ? (changed.length ? `${changed.length} changed · ${items.length - changed.length} the same` : 'All the same as sales') : `${items.length - measured} still to measure`, measured === items.length], ['Site checks', answered === SITE_CHECKS.length ? (issues.length ? `${issues.length} to look at: ${issues.map(([, l]) => l.toLowerCase()).join(', ')}` : 'No problems found') : `${SITE_CHECKS.length - answered} not answered`, answered === SITE_CHECKS.length], ['Photos', allPhotos ? `${allPhotos} photos` : 'No photos yet', allPhotos > 0], ['Signature', signed ? `Signed by ${signer}` : noSign ? `Not signed: ${noSign}` : 'Not signed yet', signed || noSign.trim().length > 3]] as [string, string, boolean][]).map(([l, val, ok]) => (
+            {([['Sizes', paper ? `From the paperwork report (${paper.file}) · ${changed.length ? `${changed.length} different from sales` : 'all the same as sales'}` : measured === items.length ? (changed.length ? `${changed.length} changed · ${items.length - changed.length} the same` : 'All the same as sales') : `${items.length - measured} still to measure`, measured === items.length], ['Site checks', answered === SITE_CHECKS.length ? (issues.length ? `${issues.length} to look at: ${issues.map(([, l]) => l.toLowerCase()).join(', ')}` : 'No problems found') : `${SITE_CHECKS.length - answered} not answered`, answered === SITE_CHECKS.length], ['Photos', allPhotos ? `${allPhotos} photos` : 'No photos yet', allPhotos > 0], ['Signature', signed ? `Signed by ${signer}` : noSign ? `Not signed: ${noSign}` : 'Not signed yet', signed || noSign.trim().length > 3]] as [string, string, boolean][]).map(([l, val, ok]) => (
               <div key={l} className="hstack" style={{ gap: 12, padding: '12px 0' }}>{ok ? <IconCircleCheck size={20} color="#1f9d5b" /> : <IconAlertTriangle size={20} color="#e0a100" />}<div className="vstack" style={{ gap: 2 }}><b style={{ fontSize: 13 }}>{l}</b><span className="small t2">{val}</span></div></div>
             ))}
           </div>

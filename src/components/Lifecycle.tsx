@@ -10,6 +10,7 @@ import { Modal, Field, Check, Avatar, Tag, useToast, Seg } from './ui';
 import { staffById, salespeople, surveyors, IMG, gbp, me } from '../data/mock';
 import { crewOf, personById, getRoster } from '../data/crew';
 import { useStore, TODAY, addDays, fmtDate, EnquiryX, JobX } from '../data/store';
+import { PaperCard } from './survey';
 import { Opening, OPENING_TYPES, Quote, quoteTotals, linesFromFp } from '../data/lifecycle';
 import { FPItem, FPSurvey, FinalCheck, fpTotals, makeFpSurvey, nextFpRef, guessOpeningsFor, OCR_UNSURE } from '../data/framepoint';
 
@@ -527,6 +528,7 @@ export function FinalSurveyView({ e }: { e: EnquiryX }) {
         ))}
       </div>
       {fs.status === 'Booked' && <div className="alert warn small"><IconClock size={16} />Booked — waiting for {s?.name} to visit and check every size. Then press “Final survey done” at the top.</div>}
+      {fs.paper && fs.status === 'Done' && <div className="vstack" style={{ gap: 8 }}><b style={{ fontSize: 13 }}>Paperwork report from the surveyor</b><PaperCard p={fs.paper} sub="Uploaded on site · the sizes are on this report" /></div>}
       {fs.checks && fs.checks.length > 0 && (
         <table className="tbl" style={{ border: '1px solid var(--border)', borderRadius: 10 }}>
           <thead><tr><th style={{ width: 34 }}>#</th><th>Item</th><th>Salesperson measured</th><th>Surveyor measured</th><th>Result</th></tr></thead>

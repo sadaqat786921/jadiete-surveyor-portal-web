@@ -2,11 +2,11 @@
 // final surveys (check every size before the office orders) and aftercare / snag inspections.
 // Everything they save goes onto the same customer record the office and sales use.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { IconAlertTriangle, IconCircleCheck, IconInfoCircle, IconSend, IconCalendarOff, IconDoorOff, IconBeach, IconEraser, IconCamera, IconPhoto } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCircleCheck, IconInfoCircle, IconSend, IconCalendarOff, IconDoorOff, IconBeach, IconEraser, IconCamera, IconPhoto, IconFileTypePdf, IconUpload, IconEye, IconReplace, IconTrash, IconClock } from '@tabler/icons-react';
 import { Modal, Field, useToast, Check } from './ui';
 import { me, staffById } from '../data/mock';
 import { useStore, TODAY, addDays, fmtDate, EnquiryX } from '../data/store';
-import type { FPItem } from '../data/framepoint';
+import type { FPItem, PaperReport } from '../data/framepoint';
 
 export type VisitKind = 'Final survey' | 'Inspection';
 export type VisitStatus = 'Booked' | 'On my way' | 'On site' | 'Submitted' | 'No access';
@@ -88,18 +88,23 @@ export function PhotoStrip({ n, onAdd, label = 'Add photo', max = 8 }: { n: numb
 export function OnMyWayModal({ v, onClose }: { v: Visit; onClose: () => void }) {
   const toast = useToast();
   const { updEnq, set } = useStore();
-  const [eta, setEta] = useState(20);
-  const at = (() => { const d = new Date(); d.setMinutes(d.getMinutes() + eta); return d.toTimeString().slice(0, 5); })();
-  const msg = `Hello ${v.customer}, this is ${me.name} from Jadeite Glazing. I am on my way for your ${v.kind === 'Final survey' ? 'final survey' : 'visit'} and should be with you at about ${at}.`;
+  // The surveyor types the time they expect to arrive (e.g. 13:30). We suggest about 20 minutes from now.
+  const [at, setAt] = useState(() => { const d = new Date(); d.setMinutes(Math.ceil((d.getMinutes() + 20) / 5) * 5); return d.toTimeString().slice(0, 5); });
+  const valid = /^\d{2}:\d{2}$/.test(at);
+  const nice = valid ? at : '…';
+  const msg = `Hello ${v.customer}, this is ${me.name} from Jadeite Glazing. I am on my way for your ${v.kind === 'Final survey' ? 'final survey' : 'visit'} and should be with you at about ${nice}.`;
   const save = () => {
+    if (!valid) return;
     if (v.kind === 'Final survey' && v.e) updEnq(v.e.id, x => ({ finalSurvey: { ...x.finalSurvey!, onWay: nowTime() } }), { kind: 'email-out', title: `On my way · arriving about ${at}`, body: msg, who: me.name });
     else { set('snags', ss => ss.map(x => (x.id === v.id ? { ...x, inspOnWay: nowTime() } : x))); if (v.e) updEnq(v.e.id, {}, { kind: 'email-out', title: `On my way · arriving about ${at}`, body: msg, who: me.name }); }
     toast(`Text sent to ${v.customer} · arriving about ${at}`); onClose();
   };
   return (
     <Modal title="Tell the customer you are on your way" sub={`${v.customer} · ${v.e?.phone || ''}`} onClose={onClose} width={540}
-      footer={<><button className="btn btn-grey" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save}><IconSend size={16} />Send text</button></>}>
-      <Field label="How long until you get there?"><div className="hstack" style={{ gap: 8, flexWrap: 'wrap' }}>{[10, 20, 30, 45, 60].map(m => <button key={m} type="button" className={`chip ${eta === m ? 'on' : ''}`} onClick={() => setEta(m)}>{m} min</button>)}</div></Field>
+      footer={<><button className="btn btn-grey" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={!valid} onClick={save}><IconSend size={16} />Send text</button></>}>
+      <Field label="What time will you get there?" hint={`Type the time, for example 13:30. The visit is booked for ${v.time}.`}>
+        <div className="hstack" style={{ gap: 8 }}><IconClock size={18} color="#0b6e5c" /><input type="time" className="input" style={{ width: 160 }} value={at} onChange={x => setAt(x.target.value)} aria-label="Arrival time" autoFocus /></div>
+      </Field>
       <div className="card" style={{ padding: 14, gap: 6, background: 'var(--bg)' }}><span className="tiny muted">TEXT TO {v.e?.phone || v.customer}</span><span className="small t2">{msg}</span></div>
       <div className="alert info small"><IconInfoCircle size={16} />The office sees it too, so they can answer if the customer calls.</div>
     </Modal>
@@ -186,3 +191,101 @@ export function TimeOffModal({ onClose, day }: { onClose: () => void; day?: stri
 }
 
 export const salespersonOf = (e?: EnquiryX) => staffById(e?.assigned)?.name || '—';
+
+/* ---------- Paperwork report: the surveyor uploads the paper survey sheet instead of typing sizes ---------- */
+const kbOf = (n: number) => Math.max(1, Math.round(n / 1024));
+/** A picture of a filled-in paper survey sheet, used for "Use a sample report" in the demo. */
+export function sampleSheet(items: FPItem[], customer: string) {
+  const rows = items.map((i, k) => {
+    const y = 150 + k * 46;
+    return `<text x="40" y="${y}" font-size="15" fill="#3a4a4a">${i.no}. ${i.name.replace(/&/g, 'and')}${i.qty > 1 ? ` x ${i.qty}` : ''}</text><text x="420" y="${y}" font-size="19" fill="#1d3fa8" font-family="Segoe Print, Comic Sans MS, cursive">${(i.size || '').replace(/mm/g, '')}</text><line x1="40" y1="${y + 14}" x2="640" y2="${y + 14}" stroke="#d5dcda"/>`;
+  }).join('');
+  const h = 230 + items.length * 46;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="680" height="${h}" viewBox="0 0 680 ${h}"><rect width="680" height="${h}" fill="#fdfcf7"/><rect x="16" y="16" width="648" height="${h - 32}" fill="none" stroke="#c9d3d0"/><text x="40" y="58" font-size="22" font-weight="700" fill="#0b1f1b" font-family="Arial">Jadeite Glazing · Final survey sheet</text><text x="40" y="88" font-size="14" fill="#6b7a78" font-family="Arial">Customer: ${customer} · Surveyor: ${me.name}</text><text x="40" y="122" font-size="12" fill="#6b7a78" font-family="Arial">ITEM</text><text x="420" y="122" font-size="12" fill="#6b7a78" font-family="Arial">WIDTH x HEIGHT (mm)</text>${rows}<text x="40" y="${h - 44}" font-size="13" fill="#6b7a78" font-family="Arial">Customer signature</text><path d="M180 ${h - 48} c20 -22 34 10 52 -6 s28 -18 40 4 s30 6 48 -10" stroke="#1d3fa8" stroke-width="2" fill="none"/></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+export function PaperReportModal({ items, customer, typed, current, onClose, onSave }: { items: FPItem[]; customer: string; typed: number; current?: PaperReport; onClose: () => void; onSave: (p: PaperReport) => void }) {
+  const toast = useToast();
+  const input = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<Omit<PaperReport, 'changed' | 'at'> | null>(current ? { file: current.file, kb: current.kb, type: current.type, preview: current.preview } : null);
+  const [diff, setDiff] = useState<'same' | 'some' | ''>(current ? (current.changed.length ? 'some' : 'same') : '');
+  const [changed, setChanged] = useState<number[]>(current?.changed || []);
+  const pick = (f?: File) => {
+    if (!f) return;
+    const type = f.type === 'application/pdf' || /\.pdf$/i.test(f.name) ? 'pdf' : f.type.startsWith('image/') ? 'image' : null;
+    if (!type) { toast('Please choose a PDF or a photo'); return; }
+    if (f.size > 15 * 1024 * 1024) { toast('That file is too big. Please choose one under 15 MB'); return; }
+    const base = { file: f.name, kb: kbOf(f.size), type: type as 'pdf' | 'image' };
+    // Small files are kept so they can be opened again from the report.
+    if (f.size <= 1.5 * 1024 * 1024) { const r = new FileReader(); r.onload = () => setFile({ ...base, preview: String(r.result) }); r.readAsDataURL(f); }
+    else setFile(base);
+  };
+  const ok = !!file && (diff === 'same' || (diff === 'some' && changed.length > 0));
+  return (
+    <Modal title={current ? 'Replace the paperwork report' : 'Upload the paperwork report'} sub={`${customer} · ${items.length} item${items.length === 1 ? '' : 's'} to measure`} onClose={onClose} width={620}
+      footer={<><button className="btn btn-grey" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={!ok} onClick={() => onSave({ ...file!, at: nowTime(), changed: diff === 'some' ? changed : [] })}><IconUpload size={16} />Use this report</button></>}>
+      <span className="small t2">If you wrote the sizes on the paper survey sheet, upload it here instead of typing every size. Upload a PDF, or take a clear photo of the sheet.</span>
+      <input ref={input} type="file" accept="application/pdf,image/*" capture="environment" style={{ display: 'none' }} onChange={x => { pick(x.target.files?.[0]); x.target.value = ''; }} aria-label="Paperwork report file" />
+      {file ? (
+        <div className="hstack" style={{ gap: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 12 }}>
+          {file.type === 'image' && file.preview ? <img src={file.preview} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /> : <span className="tile" style={{ width: 56, height: 56, borderRadius: 8, background: '#fdecec' }}><IconFileTypePdf size={26} color="#d64545" /></span>}
+          <div className="vstack" style={{ gap: 2, flex: 1, minWidth: 0 }}><b style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.file}</b><span className="tiny muted">{file.type === 'pdf' ? 'PDF' : 'Photo'} · {file.kb} KB</span></div>
+          <button className="btn btn-outline btn-sm" onClick={() => input.current?.click()}><IconReplace size={14} />Choose another</button>
+        </div>
+      ) : (
+        <div className="vstack" style={{ gap: 10, alignItems: 'center', padding: 24, border: '2px dashed var(--border)', borderRadius: 12, background: 'var(--bg)', textAlign: 'center' }}
+          onDragOver={x => x.preventDefault()} onDrop={x => { x.preventDefault(); pick(x.dataTransfer.files?.[0]); }}>
+          <IconUpload size={26} color="#0b6e5c" />
+          <b style={{ fontSize: 14 }}>Drop the file here, or choose it</b>
+          <span className="tiny muted">PDF or photo · up to 15 MB</span>
+          <div className="hstack" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => input.current?.click()}><IconUpload size={14} />Choose file or take photo</button>
+            <button className="btn btn-outline btn-sm" onClick={() => setFile({ file: `Survey sheet ${customer}.jpg`, kb: 864, type: 'image', preview: sampleSheet(items, customer) })}>Use a sample report</button>
+          </div>
+        </div>
+      )}
+      <Field label="Are the sizes on the paperwork the same as the salesperson's?">
+        <div className="hstack" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className={`chip ${diff === 'same' ? 'on' : ''}`} onClick={() => setDiff('same')}>Yes, all the same</button>
+          <button type="button" className={`chip ${diff === 'some' ? 'on-warn' : ''}`} onClick={() => setDiff('some')}>No, some are different</button>
+        </div>
+      </Field>
+      {diff === 'some' && (
+        <Field label="Which items are different?">
+          <div className="vstack" style={{ gap: 8 }}>{items.map(i => <Check key={i.no} on={changed.includes(i.no)} onChange={v => setChanged(c => (v ? [...c, i.no] : c.filter(n => n !== i.no)))} label={<span>{i.no}. {i.name}{i.qty > 1 ? ` × ${i.qty}` : ''} <span className="muted">· sales measured {i.size}</span></span>} />)}</div>
+        </Field>
+      )}
+      {typed > 0 && <div className="alert warn small"><IconAlertTriangle size={16} /><div>You have typed {typed} size{typed === 1 ? '' : 's'}. {typed === 1 ? 'It' : 'They'} will be removed and the paperwork report used instead.</div></div>}
+      <div className="alert info small"><IconInfoCircle size={16} />The report is added to the final survey, so the office and the salesperson see exactly what you wrote.</div>
+    </Modal>
+  );
+}
+
+/** Shows an uploaded paperwork report: a preview, plus open / replace / remove while on site. */
+export function PaperCard({ p, onReplace, onRemove, sub }: { p: PaperReport; onReplace?: () => void; onRemove?: () => void; sub?: string }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="hstack" style={{ gap: 14, padding: 14, border: '1px solid var(--border)', borderRadius: 12, background: '#fff', flexWrap: 'wrap' }}>
+      <button type="button" onClick={() => (p.preview ? setOpen(true) : toast(`Opening ${p.file}`))} style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer' }} aria-label="Open the paperwork report">
+        {p.type === 'image' && p.preview ? <img src={p.preview} alt="Paperwork report" style={{ width: 96, height: 72, objectFit: 'cover', objectPosition: 'top', borderRadius: 8, border: '1px solid var(--border)' }} /> : <span className="tile" style={{ width: 96, height: 72, borderRadius: 8, background: '#fdecec' }}><IconFileTypePdf size={30} color="#d64545" /></span>}
+      </button>
+      <div className="vstack" style={{ gap: 3, flex: 1, minWidth: 200 }}>
+        <b style={{ fontSize: 13.5 }}>{p.file}</b>
+        <span className="tiny muted">{sub || 'Paperwork report'} · {p.type === 'pdf' ? 'PDF' : 'Photo'} · {p.kb} KB · uploaded {p.at}</span>
+        <span className="small t2">{p.changed.length ? `${p.changed.length} item${p.changed.length === 1 ? '' : 's'} different from the sales size` : 'All sizes the same as sales'}</span>
+      </div>
+      <div className="hstack" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn-outline btn-sm" onClick={() => (p.preview ? setOpen(true) : toast(`Opening ${p.file}`))}><IconEye size={14} />View</button>
+        {onReplace && <button className="btn btn-outline btn-sm" onClick={onReplace}><IconReplace size={14} />Replace</button>}
+        {onRemove && <button className="btn btn-grey btn-sm" onClick={onRemove}><IconTrash size={14} />Remove</button>}
+      </div>
+      {open && p.preview && (
+        <Modal title={p.file} sub="Paperwork report" onClose={() => setOpen(false)} width={760} footer={<button className="btn btn-primary" onClick={() => setOpen(false)}>Close</button>}>
+          {p.type === 'pdf' ? <iframe src={p.preview} title={p.file} style={{ width: '100%', height: '65vh', border: '1px solid var(--border)', borderRadius: 8 }} /> : <img src={p.preview} alt={p.file} style={{ width: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />}
+        </Modal>
+      )}
+    </div>
+  );
+}
