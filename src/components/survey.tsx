@@ -196,9 +196,11 @@ export const salespersonOf = (e?: EnquiryX) => staffById(e?.assigned)?.name || '
 const kbOf = (n: number) => Math.max(1, Math.round(n / 1024));
 /** A picture of a filled-in paper survey sheet, used for "Use a sample report" in the demo. */
 export function sampleSheet(items: FPItem[], customer: string) {
+  const x = (t: string) => t.replace(/&/g, 'and').replace(/</g, '').replace(/>/g, '');
+  customer = x(customer);
   const rows = items.map((i, k) => {
     const y = 150 + k * 46;
-    return `<text x="40" y="${y}" font-size="15" fill="#3a4a4a">${i.no}. ${i.name.replace(/&/g, 'and')}${i.qty > 1 ? ` x ${i.qty}` : ''}</text><text x="420" y="${y}" font-size="19" fill="#1d3fa8" font-family="Segoe Print, Comic Sans MS, cursive">${(i.size || '').replace(/mm/g, '')}</text><line x1="40" y1="${y + 14}" x2="640" y2="${y + 14}" stroke="#d5dcda"/>`;
+    return `<text x="40" y="${y}" font-size="15" fill="#3a4a4a">${i.no}. ${x(i.name)}${i.qty > 1 ? ` x ${i.qty}` : ''}</text><text x="420" y="${y}" font-size="19" fill="#1d3fa8" font-family="Segoe Print, Comic Sans MS, cursive">${(i.size || '').replace(/mm/g, '')}</text><line x1="40" y1="${y + 14}" x2="640" y2="${y + 14}" stroke="#d5dcda"/>`;
   }).join('');
   const h = 230 + items.length * 46;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="680" height="${h}" viewBox="0 0 680 ${h}"><rect width="680" height="${h}" fill="#fdfcf7"/><rect x="16" y="16" width="648" height="${h - 32}" fill="none" stroke="#c9d3d0"/><text x="40" y="58" font-size="22" font-weight="700" fill="#0b1f1b" font-family="Arial">Jadeite Glazing · Final survey sheet</text><text x="40" y="88" font-size="14" fill="#6b7a78" font-family="Arial">Customer: ${customer} · Surveyor: ${me.name}</text><text x="40" y="122" font-size="12" fill="#6b7a78" font-family="Arial">ITEM</text><text x="420" y="122" font-size="12" fill="#6b7a78" font-family="Arial">WIDTH x HEIGHT (mm)</text>${rows}<text x="40" y="${h - 44}" font-size="13" fill="#6b7a78" font-family="Arial">Customer signature</text><path d="M180 ${h - 48} c20 -22 34 10 52 -6 s28 -18 40 4 s30 6 48 -10" stroke="#1d3fa8" stroke-width="2" fill="none"/></svg>`;
